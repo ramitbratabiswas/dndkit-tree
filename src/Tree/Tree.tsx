@@ -1,70 +1,128 @@
-import type { TreeProps } from "./types";
-import "./Tree.styles.css";
-import { TreeItem } from "./TreeItem";
-import { DragDropProvider } from "@dnd-kit/react";
+import { useRef, useState } from "react";
+import { DragDropProvider, DragOverlay } from "@dnd-kit/react";
 import { move } from "@dnd-kit/helpers";
-import { isFile, isFolder } from "./types";
+
+import type { FlattenedItem, TreeProps } from "./types";
+import styles from "./Tree.module.css";
+import { TreeItem } from "./TreeItem";
+import { TreeItemOverlay } from "./TreeItemOverlay";
+import { buildTree, flattenTree, getDescendants, getDragDepth, getProjection } from "./utilities";
 
 export const Tree = (props: TreeProps) => {
-  const { folders, files, level = 0, onChange } = props;
+    const { items, indentation = 50, onChange } = props;
 
-  const combined = [...folders, ...files];
+    const [flattenedItems, setFlattenedItems] = useState<FlattenedItem[]>(() => flattenTree(items));
+    const initialDepth = useRef<number>(0);
+    const sourceChildren = useRef<FlattenedItem[]>([]);
 
-  return (
-    <DragDropProvider
-      onDragOver={(event) => {
-        const { source, target } = event.operation;
-        if (!source || !target || source.id === target.id) return;
+    return (
+        <DragDropProvider
+            onDragStart={(event) => {
+                const { source } = event.operation;
 
-        const src = combined.find((x) => x.id === source.id);
-        const trg = combined.find((x) => x.id === target.id);
-        if (!src || !trg) return;
+                if (!source) return;
 
-        if (isFolder(src) !== isFolder(trg)) return;
+                const sourceItem = flattenedItems.find(({ id }) => id === source.id);
+                if (!sourceItem) return;
 
-        event.preventDefault();
-      }}
-      onDragEnd={(event) => {
-        if (event.canceled) return;
+                const depth = sourceItem.depth;
+                initialDepth.current = depth;
 
-        const { source, target } = event.operation;
-        if (!source || !target || source.id === target.id) return;
+                setFlattenedItems((flattenedItems) => {
+                    sourceChildren.current = [];
 
-        const src = combined.find((x) => x.id === source.id);
-        const trg = combined.find((x) => x.id === target.id);
-        if (!src || !trg) return;
+                    const descendants = getDescendants(flattenedItems, source.id);
 
-        if (isFolder(src) !== isFolder(trg)) return;
+                    return flattenedItems.filter((item) => {
+                        if (descendants.has(item.id)) {
+                            sourceChildren.current = [...sourceChildren.current, item];
+                            return false;
+                        };
+                        return true;
+                    });
+                });
+            }}
 
-        const nextCombined = move(combined, event);
+            onDragOver={(event, manager) => {
+                const { source, target } = event.operation;
+                event.preventDefault();
 
-        const nextFolders = nextCombined.filter(isFolder);
-        const nextFiles = nextCombined.filter(isFile);
+                if (source && target && source.id !== target.id) {
+                    setFlattenedItems((flattenedItems) => {
+                        const offsetLeft = manager.dragOperation.transform.x;
+                        const dragDepth = getDragDepth(offsetLeft, indentation);
+                        const projectedDepth = initialDepth.current + dragDepth;
 
-        onChange?.({ folders: nextFolders, files: nextFiles });
-      }}
-    >
-      <div className="tree-container">
-        <div className="tree-list">
-          {folders.map((folder, index) => (
-            <TreeItem
-              key={folder.id}
-              item={folder}
-              level={level}
-              index={index}
-            />
-          ))}
+                        const { depth, parentId } = getProjection(flattenedItems, target.id, projectedDepth);
 
-          {files.map((file, index) => (
-            <TreeItem
-              key={file.id}
-              item={file}
-              level={level}
-              index={index}
-            />
-          ))}
-        </div>
-      </div>
-    </DragDropProvider>
-  );
+                        const sortedItems = move(flattenedItems, event);
+                        const newItems = sortedItems.map((item) =>
+                            item.id === source.id ? { ...item, depth, parentId } : item
+                        );
+
+                        return newItems;
+                    });
+                }
+            }}
+
+            onDragMove={(event, manager) => {
+                const { source } = event.operation;
+                if (!source) return;
+
+                const offsetLeft = manager.dragOperation.transform.x;
+                const dragDepth = getDragDepth(offsetLeft, indentation);
+                const projectedDepth = initialDepth.current + dragDepth;
+
+                const { depth, parentId } = getProjection(
+                    flattenedItems,
+                    source.id,
+                    projectedDepth
+                );
+
+                if (
+                    source.data!.depth !== depth ||
+                    source.data!.parentId !== parentId
+                ) {
+                    setFlattenedItems((items) =>
+                        items.map((item) =>
+                            item.id === source.id ? { ...item, depth, parentId } : item
+                        )
+                    );
+                }
+            }}
+
+            onDragEnd={(event) => {
+                if (event.canceled) return setFlattenedItems(flattenTree(items));
+                const updatedTree = buildTree([...flattenedItems, ...sourceChildren.current]);
+                setFlattenedItems(flattenTree(updatedTree));
+                onChange(updatedTree);
+            }}
+        >
+            <ul className={styles.Tree}>
+                {flattenedItems.map((item, index) => 
+                    <TreeItem 
+                        key={item.id}
+                        {...item}
+                        index={index}
+                        onRemove={() => {
+                            const newItems = flattenedItems.filter(({ id }) => id !== item.id);
+                            const tree = buildTree(newItems);
+
+                            setFlattenedItems(flattenTree(tree));
+                            onChange(tree);
+                        }}
+                    />
+                )}
+            </ul>
+            <DragOverlay style={{width: 'min-content'}}>
+                {(source) => 
+                    <TreeItemOverlay
+                        id={source.id}
+                        count={sourceChildren.current.length}
+                    />
+                }
+            </DragOverlay>
+
+        </DragDropProvider>
+    );
 };

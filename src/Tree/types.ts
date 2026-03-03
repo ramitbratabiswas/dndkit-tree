@@ -1,31 +1,28 @@
-export type Item = File | Folder;
-
-export interface File {
-    id: string;
-}
-
-export interface Folder {
+export interface Item {
     id: string;
     children: Item[];
+    collapsed?: boolean;
 }
 
-export const isFolder = (item: Item): item is Folder => {
-    return "children" in item;
-};
+export interface FlattenedItem extends Item {
+    parentId: string | null;
+    depth: number;
+    index: number;
+}
 
-export const isFile = (item: Item): item is File => {
-    return !("children" in item);
-};
+export type UniqueIdentifier = string | number;
 
 export interface TreeProps {
-    folders: Folder[];
-    files: File[];
-    level?: number;
-    onChange?: (next: { folders: Folder[]; files: File[] }) => void;
+    items: Item[];
+    indentation?: number;
+    onChange(items: Item[]): void;
 }
 
-export interface TreeItemProps {
-    item: Item;
-    index: number;
-    level?: number;
+export interface TreeItemProps extends FlattenedItem {
+    onRemove?(): void;
+}
+
+export interface TreeItemOverlayProps {
+    id: UniqueIdentifier;
+    count: number;
 }

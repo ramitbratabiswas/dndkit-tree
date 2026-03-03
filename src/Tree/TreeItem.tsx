@@ -1,27 +1,44 @@
-import { useSortable } from "@dnd-kit/react/sortable";
-import { isFile, isFolder, type TreeItemProps } from "./types";
-import { Tree } from "./Tree";
+import { useSortable } from '@dnd-kit/react/sortable';
 
-export const TreeItem = ({ item, index, level = 0 }: TreeItemProps) => {
-  const { ref, handleRef, isDragging } = useSortable({
-    id: item.id,
-    index: index
-  });
+import type { TreeItemProps } from './types';
+import styles from './Tree.module.css';
 
-  const folders = isFolder(item) ? item.children.filter(isFolder) : [];
-  const files = isFolder(item) ? item.children.filter(isFile) : [];
 
-  return (
-    <div className="tree-item-container">
-      <div
-        ref={ref}
-        className={`tree-item ${isDragging ? "dragging" : ""}`}
-        style={{ marginLeft: level * 24 }}
-      >
-        {item.id}
-      </div>
+const INDENTATION = 50;
 
-      <Tree folders={folders} files={files} level={level + 1} />
-    </div>
-  );
-};
+const config = {
+    alignment: {
+        x: 'start',
+        y: 'center',
+    },
+    transition: {
+        idle: true,
+    },
+} as const;
+
+export function TreeItem(props: TreeItemProps) {
+    const { depth, id, index, parentId } = props;
+
+    const { ref, isDragSource } = useSortable({
+        ...config,
+        id,
+        index,
+        data: {
+            depth,
+            parentId,
+        },
+    });
+
+    return (
+        <li
+            ref={ref}
+            className={styles.TreeItem}
+            style={{
+                marginLeft: depth * INDENTATION,
+            }}
+            aria-hidden={isDragSource}
+        >
+            {id}
+        </li>
+    );
+}
